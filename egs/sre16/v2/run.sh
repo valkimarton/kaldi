@@ -32,54 +32,69 @@ nnet_dir=exp/xvector_nnet_1a
 stage=0
 if [ $stage -le 0 ]; then
   # Path to some, but not all of the training corpora
-  data_root=/export/corpora/LDC
+  data_root=/home/ubuntu/combined_extracted_data
+  nist04_root=$data_root
 
-  # Prepare telephone and microphone speech from Mixer6.
-  local/make_mx6.sh $data_root/LDC2013S03 data/
+#  # Prepare telephone and microphone speech from Mixer6.
+#  local/make_mx6.sh $data_root/LDC2013S03 data/
 
-  # Prepare SRE10 test and enroll. Includes microphone interview speech.
-  # NOTE: This corpus is now available through the LDC as LDC2017S06.
-  local/make_sre10.pl /export/corpora5/SRE/SRE2010/eval/ data/
+#  # Prepare SRE10 test and enroll. Includes microphone interview speech.
+#  # NOTE: This corpus is now available through the LDC as LDC2017S06.
+#  local/make_sre10.pl /export/corpora5/SRE/SRE2010/eval/ data/
 
-  # Prepare SRE08 test and enroll. Includes some microphone speech.
-  local/make_sre08.pl $data_root/LDC2011S08 $data_root/LDC2011S05 data/
+#  # Prepare SRE08 test and enroll. Includes some microphone speech.
+#  local/make_sre08.pl $data_root/LDC2011S08 $data_root/LDC2011S05 data/
 
-  # This prepares the older NIST SREs from 2004-2006.
-  local/make_sre.sh $data_root data/
+#  # This prepares the older NIST SREs from 2004-2006.
+#  local/make_sre.sh $data_root data/
 
-  # Combine all SREs prior to 2016 and Mixer6 into one dataset
+  # VRNT: Prepare NIST04 dataset.
+  local/make_sre04_VRNT.sh $nist04_root data/
+
+#  # Combine all SREs prior to 2016 and Mixer6 into one dataset
+#  utils/combine_data.sh data/sre \
+#    data/sre2004 data/sre2005_train \
+#    data/sre2005_test data/sre2006_train \
+#    data/sre2006_test_1 data/sre2006_test_2 \
+#    data/sre08 data/mx6 data/sre10
+#  utils/validate_data_dir.sh --no-text --no-feats data/sre
+#  utils/fix_data_dir.sh data/sre
+
+#  # VRNT: Combine existing datasets from SREs prior to 2016 and Mixer6 into one dataset
   utils/combine_data.sh data/sre \
-    data/sre2004 data/sre2005_train \
-    data/sre2005_test data/sre2006_train \
-    data/sre2006_test_1 data/sre2006_test_2 \
-    data/sre08 data/mx6 data/sre10
+    data/sre2004
   utils/validate_data_dir.sh --no-text --no-feats data/sre
   utils/fix_data_dir.sh data/sre
 
-  # Prepare SWBD corpora.
-  local/make_swbd_cellular1.pl $data_root/LDC2001S13 \
-    data/swbd_cellular1_train
-  local/make_swbd_cellular2.pl /export/corpora5/LDC/LDC2004S07 \
-    data/swbd_cellular2_train
-  local/make_swbd2_phase1.pl $data_root/LDC98S75 \
-    data/swbd2_phase1_train
-  local/make_swbd2_phase2.pl /export/corpora5/LDC/LDC99S79 \
-    data/swbd2_phase2_train
-  local/make_swbd2_phase3.pl /export/corpora5/LDC/LDC2002S06 \
-    data/swbd2_phase3_train
 
-  # Combine all SWB corpora into one dataset.
-  utils/combine_data.sh data/swbd \
-    data/swbd_cellular1_train data/swbd_cellular2_train \
-    data/swbd2_phase1_train data/swbd2_phase2_train data/swbd2_phase3_train
+#  # Prepare SWBD corpora.
+#  local/make_swbd_cellular1.pl $data_root/LDC2001S13 \
+#    data/swbd_cellular1_train
+#  local/make_swbd_cellular2.pl /export/corpora5/LDC/LDC2004S07 \
+#    data/swbd_cellular2_train
+#  local/make_swbd2_phase1.pl $data_root/LDC98S75 \
+#    data/swbd2_phase1_train
+#  local/make_swbd2_phase2.pl /export/corpora5/LDC/LDC99S79 \
+#    data/swbd2_phase2_train
+#  local/make_swbd2_phase3.pl /export/corpora5/LDC/LDC2002S06 \
+#    data/swbd2_phase3_train
 
-  # Prepare NIST SRE 2016 evaluation data.
-  local/make_sre16_eval.pl /export/corpora5/SRE/R149_0_1 data
+#  # Combine all SWB corpora into one dataset.
+#  utils/combine_data.sh data/swbd \
+#    data/swbd_cellular1_train data/swbd_cellular2_train \
+#    data/swbd2_phase1_train data/swbd2_phase2_train data/swbd2_phase3_train
 
-  # Prepare unlabeled Cantonese and Tagalog development data. This dataset
-  # was distributed to SRE participants.
-  local/make_sre16_unlabeled.pl /export/corpora5/SRE/LDC2016E46_SRE16_Call_My_Net_Training_Data data
+#  # Prepare NIST SRE 2016 evaluation data.
+#  local/make_sre16_eval.pl /export/corpora5/SRE/R149_0_1 data
+
+#  # Prepare unlabeled Cantonese and Tagalog development data. This dataset
+#  # was distributed to SRE participants.
+#  local/make_sre16_unlabeled.pl /export/corpora5/SRE/LDC2016E46_SRE16_Call_My_Net_Training_Data data
 fi
+
+# VRNT: checkpoint
+echo "Part 1: Data preparation COMPLETE"
+# exit 1;
 
 if [ $stage -le 1 ]; then
   # Make MFCCs and compute the energy-based VAD for each dataset
@@ -87,7 +102,9 @@ if [ $stage -le 1 ]; then
     utils/create_split_dir.pl \
       /export/b{14,15,16,17}/$USER/kaldi-data/egs/sre16/v2/xvector-$(date +'%m_%d_%H_%M')/mfccs/storage $mfccdir/storage
   fi
-  for name in sre swbd sre16_eval_enroll sre16_eval_test sre16_major; do
+  # VRNT: set used datasets. Oroginal was: ('sre', 'swbd', 'sre16_eval_enroll', 'sre16_eval_test', 'sre16_major')
+  DATASETS=('sre')
+  for name in "${DATASETS[@]}"; do
     steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
       data/${name} exp/make_mfcc $mfccdir
     utils/fix_data_dir.sh data/${name}
@@ -98,6 +115,10 @@ if [ $stage -le 1 ]; then
   utils/combine_data.sh --extra-files "utt2num_frames" data/swbd_sre data/swbd data/sre
   utils/fix_data_dir.sh data/swbd_sre
 fi
+
+# VRNT: checkpoint
+echo "Part 2: Make MFCCs and compute the energy-based VAD for each dataset COMPLETE"
+exit 1;
 
 # In this section, we augment the SWBD and SRE data with reverberation,
 # noise, music, and babble, and combined it with the clean data.
