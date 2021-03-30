@@ -17,6 +17,11 @@
 # https://david-ryan-snyder.github.io/2017/10/04/model_sre16_v2.html
 # for details.
 
+# THESIS-DEBUG: For step-by-step ecexution (didn't work correctly)
+# echo "Press CTRL+C to proceed."
+# trap "pkill -f 'sleep 1h'" INT
+# trap "set +x ; sleep 1h ; set -x" DEBUG 
+
 . ./cmd.sh
 . ./path.sh
 set -e
@@ -29,7 +34,9 @@ sre16_trials_tgl=data/sre16_eval_test/trials_tgl
 sre16_trials_yue=data/sre16_eval_test/trials_yue
 nnet_dir=exp/xvector_nnet_1a
 
-stage=0
+stage=4
+echo "Starting from stage $stage"
+
 if [ $stage -le 0 ]; then
   # Path to some, but not all of the training corpora
   data_root=/home/ubuntu/combined_extracted_data
@@ -48,7 +55,7 @@ if [ $stage -le 0 ]; then
 #  # This prepares the older NIST SREs from 2004-2006.
 #  local/make_sre.sh $data_root data/
 
-  # VRNT: Prepare NIST04 dataset.
+  # THESIS: Prepare NIST04 dataset.
   local/make_sre04_VRNT.sh $nist04_root data/
 
 #  # Combine all SREs prior to 2016 and Mixer6 into one dataset
@@ -60,7 +67,7 @@ if [ $stage -le 0 ]; then
 #  utils/validate_data_dir.sh --no-text --no-feats data/sre
 #  utils/fix_data_dir.sh data/sre
 
-#  # VRNT: Combine existing datasets from SREs prior to 2016 and Mixer6 into one dataset
+#  # THESIS: Combine existing datasets from SREs prior to 2016 and Mixer6 into one dataset
   utils/combine_data.sh data/sre \
     data/sre2004
   utils/validate_data_dir.sh --no-text --no-feats data/sre
@@ -92,7 +99,7 @@ if [ $stage -le 0 ]; then
 #  local/make_sre16_unlabeled.pl /export/corpora5/SRE/LDC2016E46_SRE16_Call_My_Net_Training_Data data
 fi
 
-# VRNT: checkpoint
+# THESIS: checkpoint
 echo "Part 1: Data preparation COMPLETE"
 # exit 1;
 
@@ -102,7 +109,7 @@ if [ $stage -le 1 ]; then
     utils/create_split_dir.pl \
       /export/b{14,15,16,17}/$USER/kaldi-data/egs/sre16/v2/xvector-$(date +'%m_%d_%H_%M')/mfccs/storage $mfccdir/storage
   fi
-  # VRNT: set used datasets. Oroginal was: ('sre', 'swbd', 'sre16_eval_enroll', 'sre16_eval_test', 'sre16_major')
+  # THESIS: set used datasets. Oroginal was: ('sre', 'swbd', 'sre16_eval_enroll', 'sre16_eval_test', 'sre16_major')
   DATASETS=('sre')
   for name in "${DATASETS[@]}"; do
     steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
@@ -112,15 +119,18 @@ if [ $stage -le 1 ]; then
       data/${name} exp/make_vad $vaddir
     utils/fix_data_dir.sh data/${name}
   done
-  utils/combine_data.sh --extra-files "utt2num_frames" data/swbd_sre data/swbd data/sre
+  # THESIS - Here we should combine 'swbd' and 'sre' datasets to 'swbd_sre'. But right now we dont have swbd, so I only use sre
+  # THESIS - Original was: utils/combine_data.sh --extra-files "utt2num_frames" data/swbd_sre data/swbd data/sre
+  utils/combine_data.sh --extra-files "utt2num_frames" data/swbd_sre data/sre
   utils/fix_data_dir.sh data/swbd_sre
 fi
 
-# VRNT: checkpoint
+# THESIS: checkpoint
+# THESIS: --- OPTIONAL ---
 echo "Part 2: Make MFCCs and compute the energy-based VAD for each dataset COMPLETE"
-exit 1;
+# exit 1;
 
-# In this section, we augment the SWBD and SRE data with reverberation,
+# In this section, we augment the SWBD and SRE data with reverberation (visszhang),
 # noise, music, and babble, and combined it with the clean data.
 # The combined list will be used to train the xvector DNN.  The SRE
 # subset will be used to train the PLDA model.
@@ -154,31 +164,34 @@ if [ $stage -le 2 ]; then
   rm -rf data/swbd_sre_reverb
   mv data/swbd_sre_reverb.new data/swbd_sre_reverb
 
-  # Prepare the MUSAN corpus, which consists of music, speech, and noise
-  # suitable for augmentation.
-  steps/data/make_musan.sh --sampling-rate 8000 /export/corpora/JHU/musan data
+  # # Prepare the MUSAN corpus, which consists of music, speech, and noise
+  # # suitable for augmentation.
+  # steps/data/make_musan.sh --sampling-rate 8000 /export/corpora/JHU/musan data
 
-  # Get the duration of the MUSAN recordings.  This will be used by the
-  # script augment_data_dir.py.
-  for name in speech noise music; do
-    utils/data/get_utt2dur.sh data/musan_${name}
-    mv data/musan_${name}/utt2dur data/musan_${name}/reco2dur
-  done
+  # # Get the duration of the MUSAN recordings.  This will be used by the
+  # # script augment_data_dir.py.
+  # for name in speech noise music; do
+  #   utils/data/get_utt2dur.sh data/musan_${name}
+  #   mv data/musan_${name}/utt2dur data/musan_${name}/reco2dur
+  # done
 
-  # Augment with musan_noise
-  steps/data/augment_data_dir.py --utt-suffix "noise" --fg-interval 1 --fg-snrs "15:10:5:0" --fg-noise-dir "data/musan_noise" data/swbd_sre data/swbd_sre_noise
-  # Augment with musan_music
-  steps/data/augment_data_dir.py --utt-suffix "music" --bg-snrs "15:10:8:5" --num-bg-noises "1" --bg-noise-dir "data/musan_music" data/swbd_sre data/swbd_sre_music
-  # Augment with musan_speech
-  steps/data/augment_data_dir.py --utt-suffix "babble" --bg-snrs "20:17:15:13" --num-bg-noises "3:4:5:6:7" --bg-noise-dir "data/musan_speech" data/swbd_sre data/swbd_sre_babble
+  # # Augment with musan_noise
+  # steps/data/augment_data_dir.py --utt-suffix "noise" --fg-interval 1 --fg-snrs "15:10:5:0" --fg-noise-dir "data/musan_noise" data/swbd_sre data/swbd_sre_noise
+  # # Augment with musan_music
+  # steps/data/augment_data_dir.py --utt-suffix "music" --bg-snrs "15:10:8:5" --num-bg-noises "1" --bg-noise-dir "data/musan_music" data/swbd_sre data/swbd_sre_music
+  # # Augment with musan_speech
+  # steps/data/augment_data_dir.py --utt-suffix "babble" --bg-snrs "20:17:15:13" --num-bg-noises "3:4:5:6:7" --bg-noise-dir "data/musan_speech" data/swbd_sre data/swbd_sre_babble
 
   # Combine reverb, noise, music, and babble into one directory.
-  utils/combine_data.sh data/swbd_sre_aug data/swbd_sre_reverb data/swbd_sre_noise data/swbd_sre_music data/swbd_sre_babble
+  # THESIS: Original was: utils/combine_data.sh data/swbd_sre_aug data/swbd_sre_reverb data/swbd_sre_noise data/swbd_sre_music data/swbd_sre_babble
+  utils/combine_data.sh data/swbd_sre_aug data/swbd_sre_reverb # THESIS: modified line
 
-  # Take a random subset of the augmentations (128k is somewhat larger than twice
-  # the size of the SWBD+SRE list)
-  utils/subset_data_dir.sh data/swbd_sre_aug 128000 data/swbd_sre_aug_128k
-  utils/fix_data_dir.sh data/swbd_sre_aug_128k
+  # # Take a random subset of the augmentations (128k is somewhat larger than twice
+  # # the size of the SWBD+SRE list)
+  # utils/subset_data_dir.sh data/swbd_sre_aug 128000 data/swbd_sre_aug_128k
+  # utils/fix_data_dir.sh data/swbd_sre_aug_128k
+  # THESIS: I have small amount of data --> Copy full data/swbd_sre_aug into data/swbd_sre_aug_128k
+  cp -r data/swbd_sre_aug data/swbd_sre_aug_128k
 
   # Make MFCCs for the augmented data.  Note that we do not compute a new
   # vad.scp file here.  Instead, we use the vad.scp from the clean version of
@@ -197,6 +210,10 @@ if [ $stage -le 2 ]; then
   utils/fix_data_dir.sh data/sre_combined
 
 fi
+
+# THESIS: checkpoint
+echo "Part 3: Make MFCCs and compute the energy-based VAD for each dataset COMPLETE"
+# exit 1;
 
 # Now we prepare the features to generate examples for xvector training.
 if [ $stage -le 3 ]; then
@@ -231,9 +248,21 @@ if [ $stage -le 3 ]; then
   utils/fix_data_dir.sh data/swbd_sre_combined_no_sil
 fi
 
-local/nnet3/xvector/run_xvector.sh --stage $stage --train-stage -1 \
-  --data data/swbd_sre_combined_no_sil --nnet-dir $nnet_dir \
-  --egs-dir $nnet_dir/egs
+# THESIS: checkpoint
+echo "Part 4: Preparing the features to generate examples for xvector training --> COMPLETE"
+# exit 1;
+
+# Trainign the DNN
+if [ $stage -le 4 ]; then
+  local/nnet3/xvector/run_xvector.sh --stage $stage --train-stage -1 \
+    --data data/swbd_sre_combined_no_sil --nnet-dir $nnet_dir \
+    --egs-dir $nnet_dir/egs
+fi
+
+# THESIS: checkpoint
+echo "Part 5: Training DNN --> COMPLETE"
+exit 1;
+
 
 if [ $stage -le 7 ]; then
   # The SRE16 major is an unlabeled dataset consisting of Cantonese and
