@@ -29,12 +29,11 @@ mfccdir=`pwd`/mfcc
 vaddir=`pwd`/mfcc
 
 # SRE16 trials
-sre16_trials=data/sre16_eval_test/trials
-sre16_trials_tgl=data/sre16_eval_test/trials_tgl
-sre16_trials_yue=data/sre16_eval_test/trials_yue
+# THESIS: own trials file
+sre16_trials=data/sre_combined/trials_NIST04_full
 nnet_dir=exp/xvector_nnet_1a
 
-stage=4
+stage=9
 echo "Starting from stage $stage"
 
 if [ $stage -le 0 ]; then
@@ -261,33 +260,52 @@ fi
 
 # THESIS: checkpoint
 echo "Part 5: Training DNN --> COMPLETE"
-exit 1;
+# exit 1;
 
 
 if [ $stage -le 7 ]; then
   # The SRE16 major is an unlabeled dataset consisting of Cantonese and
   # and Tagalog.  This is useful for things like centering, whitening and
   # score normalization.
-  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 6G" --nj 40 \
-    $nnet_dir data/sre16_major \
-    exp/xvectors_sre16_major
+
+  # THESIS: way of the original extraction
+  # TODO: Remove
+  # sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 6G" --nj 40 \
+  #   $nnet_dir data/sre_combined \
+  #   exp/xvectors_sre16_major_original
+
+  use_gpu=true
+
+  # THESIS: changed data/sre16_major -> data/sre_combined
+  # TODO: Uncomment
+  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
+    $nnet_dir data/sre_combined \
+    exp/xvectors_sre16_major_gpu_original
 
   # Extract xvectors for SRE data (includes Mixer 6). We'll use this for
   # things like LDA or PLDA.
-  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 12G" --nj 40 \
+  # TODO: Uncomment
+  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
     $nnet_dir data/sre_combined \
     exp/xvectors_sre_combined
 
   # The SRE16 test data
-  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 6G" --nj 40 \
-    $nnet_dir data/sre16_eval_test \
+  # THESIS: changed data/sre16_eval_test -> data/sre_combined
+  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
+    $nnet_dir data/sre_combined \
     exp/xvectors_sre16_eval_test
 
   # The SRE16 enroll data
-  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 6G" --nj 40 \
-    $nnet_dir data/sre16_eval_enroll \
+  # THESIS: changed data/sre16_eval_enroll -> data/sre_combined
+  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
+    $nnet_dir data/sre_combined \
     exp/xvectors_sre16_eval_enroll
 fi
+
+# THESIS: checkpoint
+echo "Part 6: x-vector extraction for different datasets --> COMPLETE"
+echo "Part 6: Same dataset used for centering+normalization, PLDA training, enrolling, testing !!!"
+# exit 1;
 
 if [ $stage -le 8 ]; then
   # Compute the mean vector for centering the evaluation xvectors.
@@ -318,29 +336,48 @@ if [ $stage -le 8 ]; then
     exp/xvectors_sre16_major/plda_adapt || exit 1;
 fi
 
+# THESIS: checkpoint
+echo "Part 7: Centering, PLDA training --> COMPLETE"
+echo "Part 7: Same dataset used for centering+normalization, PLDA training, enrolling, testing !!!"
+# exit 1;
+
+
 if [ $stage -le 9 ]; then
   # Get results using the out-of-domain PLDA model.
+  # THESIS: slightly modofied
+  # THESIS: removed Tagalog and Cantonese trials and scores, since it doesn't make sense in my dataset
   $train_cmd exp/scores/log/sre16_eval_scoring.log \
     ivector-plda-scoring --normalize-length=true \
     --num-utts=ark:exp/xvectors_sre16_eval_enroll/num_utts.ark \
     "ivector-copy-plda --smoothing=0.0 exp/xvectors_sre_combined/plda - |" \
-    "ark:ivector-mean ark:data/sre16_eval_enroll/spk2utt scp:exp/xvectors_sre16_eval_enroll/xvector.scp ark:- | ivector-subtract-global-mean exp/xvectors_sre16_major/mean.vec ark:- ark:- | transform-vec exp/xvectors_sre_combined/transform.mat ark:- ark:- | ivector-normalize-length ark:- ark:- |" \
+    "ark:ivector-mean ark:data/sre_combined/spk2utt scp:exp/xvectors_sre16_eval_enroll/xvector.scp ark:- | ivector-subtract-global-mean exp/xvectors_sre16_major/mean.vec ark:- ark:- | transform-vec exp/xvectors_sre_combined/transform.mat ark:- ark:- | ivector-normalize-length ark:- ark:- |" \
     "ark:ivector-subtract-global-mean exp/xvectors_sre16_major/mean.vec scp:exp/xvectors_sre16_eval_test/xvector.scp ark:- | transform-vec exp/xvectors_sre_combined/transform.mat ark:- ark:- | ivector-normalize-length ark:- ark:- |" \
     "cat '$sre16_trials' | cut -d\  --fields=1,2 |" exp/scores/sre16_eval_scores || exit 1;
 
-  utils/filter_scp.pl $sre16_trials_tgl exp/scores/sre16_eval_scores > exp/scores/sre16_eval_tgl_scores
-  utils/filter_scp.pl $sre16_trials_yue exp/scores/sre16_eval_scores > exp/scores/sre16_eval_yue_scores
-  pooled_eer=$(paste $sre16_trials exp/scores/sre16_eval_scores | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
-  tgl_eer=$(paste $sre16_trials_tgl exp/scores/sre16_eval_tgl_scores | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
-  yue_eer=$(paste $sre16_trials_yue exp/scores/sre16_eval_yue_scores | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
-  echo "Using Out-of-Domain PLDA, EER: Pooled ${pooled_eer}%, Tagalog ${tgl_eer}%, Cantonese ${yue_eer}%"
+  # utils/filter_scp.pl $sre16_trials_tgl exp/scores/sre16_eval_scores > exp/scores/sre16_eval_tgl_scores
+  # utils/filter_scp.pl $sre16_trials_yue exp/scores/sre16_eval_scores > exp/scores/sre16_eval_yue_scores
+  # pooled_eer=$(paste $sre16_trials exp/scores/sre16_eval_scores | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
+  paste $sre16_trials exp/scores/sre16_eval_scores > exp/scores/sre16_eval_scores_for_eer_compute_full
+  paste $sre16_trials exp/scores/sre16_eval_scores | awk '{print $6, $3}' > exp/scores/sre16_eval_scores_for_eer_compute
+  pooled_eer=$(compute-eer exp/scores/sre16_eval_scores_for_eer_compute)
+  compute-eer exp/scores/sre16_eval_scores_for_eer_compute > exp/scores/sre16_eval_eer_score
+  # tgl_eer=$(paste $sre16_trials_tgl exp/scores/sre16_eval_tgl_scores | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
+  # yue_eer=$(paste $sre16_trials_yue exp/scores/sre16_eval_yue_scores | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
+  echo "Using Out-of-Domain PLDA, EER: Pooled ${pooled_eer}%"
   # EER: Pooled 11.73%, Tagalog 15.96%, Cantonese 7.52%
   # For reference, here's the ivector system from ../v1:
   # EER: Pooled 13.65%, Tagalog 17.73%, Cantonese 9.61%
 fi
 
+# THESIS: checkpoint
+echo "Part 8: Getting result with out-of-domain PLDA --> COMPLETE"
+echo "Part 8: Same dataset used for centering+normalization, PLDA training, enrolling, testing !!!"
+exit 1;
+
+
 if [ $stage -le 10 ]; then
   # Get results using the adapted PLDA model.
+  # THESIS: removed Tagalog and Cantonese trials and scores, since it doesn't make sense in my dataset
   $train_cmd exp/scores/log/sre16_eval_scoring_adapt.log \
     ivector-plda-scoring --normalize-length=true \
     --num-utts=ark:exp/xvectors_sre16_eval_enroll/num_utts.ark \
@@ -349,12 +386,12 @@ if [ $stage -le 10 ]; then
     "ark:ivector-subtract-global-mean exp/xvectors_sre16_major/mean.vec scp:exp/xvectors_sre16_eval_test/xvector.scp ark:- | transform-vec exp/xvectors_sre_combined/transform.mat ark:- ark:- | ivector-normalize-length ark:- ark:- |" \
     "cat '$sre16_trials' | cut -d\  --fields=1,2 |" exp/scores/sre16_eval_scores_adapt || exit 1;
 
-  utils/filter_scp.pl $sre16_trials_tgl exp/scores/sre16_eval_scores_adapt > exp/scores/sre16_eval_tgl_scores_adapt
-  utils/filter_scp.pl $sre16_trials_yue exp/scores/sre16_eval_scores_adapt > exp/scores/sre16_eval_yue_scores_adapt
+  # utils/filter_scp.pl $sre16_trials_tgl exp/scores/sre16_eval_scores_adapt > exp/scores/sre16_eval_tgl_scores_adapt
+  # utils/filter_scp.pl $sre16_trials_yue exp/scores/sre16_eval_scores_adapt > exp/scores/sre16_eval_yue_scores_adapt
   pooled_eer=$(paste $sre16_trials exp/scores/sre16_eval_scores_adapt | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
-  tgl_eer=$(paste $sre16_trials_tgl exp/scores/sre16_eval_tgl_scores_adapt | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
-  yue_eer=$(paste $sre16_trials_yue exp/scores/sre16_eval_yue_scores_adapt | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
-  echo "Using Adapted PLDA, EER: Pooled ${pooled_eer}%, Tagalog ${tgl_eer}%, Cantonese ${yue_eer}%"
+  # tgl_eer=$(paste $sre16_trials_tgl exp/scores/sre16_eval_tgl_scores_adapt | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
+  # yue_eer=$(paste $sre16_trials_yue exp/scores/sre16_eval_yue_scores_adapt | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
+  echo "Using Adapted PLDA, EER: Pooled ${pooled_eer}%"
   # EER: Pooled 8.57%, Tagalog 12.29%, Cantonese 4.89%
   # For reference, here's the ivector system from ../v1:
   # EER: Pooled 12.98%, Tagalog 17.8%, Cantonese 8.35%
@@ -376,3 +413,9 @@ if [ $stage -le 10 ]; then
   # min_Cprimary:  0.76
   # act_Cprimary:  0.81
 fi
+
+# THESIS: checkpoint
+echo "Part 9: Getting result with adapted PLDA --> COMPLETE"
+echo "Part 9: Same dataset used for centering+normalization, PLDA training, enrolling, testing !!!"
+exit 1;
+
