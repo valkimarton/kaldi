@@ -22,10 +22,6 @@
 # trap "pkill -f 'sleep 1h'" INT
 # trap "set +x ; sleep 1h ; set -x" DEBUG 
 
-# THESIS: Remove if DNN, PLDA or MEAN_VECTOR training is needed
-echo "Run other shell script to get results from prebuild models!"
-exit 1;
-
 . ./cmd.sh
 . ./path.sh
 set -e
@@ -37,13 +33,15 @@ vaddir=`pwd`/mfcc
 sre16_trials=data/sre_combined/trials_NIST04_full
 nnet_dir=exp/xvector_nnet_1a
 
-stage=9
+stage=8
 echo "Starting from stage $stage"
 
 if [ $stage -le 0 ]; then
   # Path to some, but not all of the training corpora
   data_root=/home/ubuntu/combined_extracted_data
-  nist04_root=$data_root
+  nist04_root=$data_root/nist04
+  nist05_train_root=$data_root/nist05_train
+  nist05_test_root=$data_root/nist05_test
 
 #  # Prepare telephone and microphone speech from Mixer6.
 #  local/make_mx6.sh $data_root/LDC2013S03 data/
@@ -61,6 +59,20 @@ if [ $stage -le 0 ]; then
   # THESIS: Prepare NIST04 dataset.
   local/make_sre04_VRNT.sh $nist04_root data/
 
+  # THESIS: Validate and Fix NIST05
+  utils/validate_data_dir.sh --no-text --no-feats data/sre2004
+  utils/fix_data_dir.sh data/sre2004
+
+  # THESIS: Prepare NIST05 dataset.
+  local/make_sre05_VRNT.sh $nist05_train_root $nist05_test_root data/
+  
+  # THESIS: Validate and Fix NIST05
+  utils/validate_data_dir.sh --no-text --no-feats data/sre2005_train
+  utils/fix_data_dir.sh data/sre2005_train
+  utils/validate_data_dir.sh --no-text --no-feats data/sre2005_test
+  utils/fix_data_dir.sh data/sre2005_test
+
+
 #  # Combine all SREs prior to 2016 and Mixer6 into one dataset
 #  utils/combine_data.sh data/sre \
 #    data/sre2004 data/sre2005_train \
@@ -71,11 +83,10 @@ if [ $stage -le 0 ]; then
 #  utils/fix_data_dir.sh data/sre
 
 #  # THESIS: Combine existing datasets from SREs prior to 2016 and Mixer6 into one dataset
-  utils/combine_data.sh data/sre \
-    data/sre2004
-  utils/validate_data_dir.sh --no-text --no-feats data/sre
-  utils/fix_data_dir.sh data/sre
-
+ utils/combine_data.sh data/sre \
+   data/sre2004
+ utils/validate_data_dir.sh --no-text --no-feats data/sre
+ utils/fix_data_dir.sh data/sre
 
 #  # Prepare SWBD corpora.
 #  local/make_swbd_cellular1.pl $data_root/LDC2001S13 \
@@ -112,9 +123,8 @@ if [ $stage -le 1 ]; then
     utils/create_split_dir.pl \
       /export/b{14,15,16,17}/$USER/kaldi-data/egs/sre16/v2/xvector-$(date +'%m_%d_%H_%M')/mfccs/storage $mfccdir/storage
   fi
-  # THESIS: set used datasets. Oroginal was: ('sre', 'swbd', 'sre16_eval_enroll', 'sre16_eval_test', 'sre16_major')
-  DATASETS=('sre')
-  for name in "${DATASETS[@]}"; do
+  # THESIS: set used datasets. Oroginal was: (sre swbd sre16_eval_enroll sre16_eval_test sre16_major)
+  for name in sre sre2005_train sre2005_test; do
     steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
       data/${name} exp/make_mfcc $mfccdir
     utils/fix_data_dir.sh data/${name}
@@ -194,7 +204,7 @@ if [ $stage -le 2 ]; then
   # utils/subset_data_dir.sh data/swbd_sre_aug 128000 data/swbd_sre_aug_128k
   # utils/fix_data_dir.sh data/swbd_sre_aug_128k
   # THESIS: I have small amount of data --> Copy full data/swbd_sre_aug into data/swbd_sre_aug_128k
-  cp -r data/swbd_sre_aug data/swbd_sre_aug_128k
+  cp -r data/swbd_sre_aug/* data/swbd_sre_aug_128k
 
   # Make MFCCs for the augmented data.  Note that we do not compute a new
   # vad.scp file here.  Instead, we use the vad.scp from the clean version of
@@ -255,15 +265,15 @@ fi
 echo "Part 4: Preparing the features to generate examples for xvector training --> COMPLETE"
 # exit 1;
 
-# Trainign the DNN
-if [ $stage -le 4 ]; then
-  local/nnet3/xvector/run_xvector.sh --stage $stage --train-stage -1 \
-    --data data/swbd_sre_combined_no_sil --nnet-dir $nnet_dir \
-    --egs-dir $nnet_dir/egs
-fi
+# Trainign the DNN 
+# if [ $stage -le 4 ]; then
+#   local/nnet3/xvector/run_xvector.sh --stage $stage --train-stage -1 \
+#     --data data/swbd_sre_combined_no_sil --nnet-dir $nnet_dir \
+#     --egs-dir $nnet_dir/egs
+# fi
 
 # THESIS: checkpoint
-echo "Part 5: Training DNN --> COMPLETE"
+echo "Part 5: Training DNN --> SKIPPED"
 # exit 1;
 
 
@@ -281,14 +291,14 @@ if [ $stage -le 7 ]; then
   use_gpu=true
 
   # THESIS: changed data/sre16_major -> data/sre_combined
-  # TODO: Uncomment
-  sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
-    $nnet_dir data/sre_combined \
-    exp/xvectors_sre16_major_gpu_original
+  # THESIS: NOT needed with pretrained models (DNN, PLDA, MEAN_VECTOR)
+  # sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
+  #   $nnet_dir data/sre_combined \
+  #   exp/xvectors_sre16_major
 
   # Extract xvectors for SRE data (includes Mixer 6). We'll use this for
   # things like LDA or PLDA.
-  # TODO: Uncomment
+  # THESIS: NOT needed with pretrained models (DNN, PLDA, MEAN_VECTOR)
   sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
     $nnet_dir data/sre_combined \
     exp/xvectors_sre_combined
@@ -296,22 +306,23 @@ if [ $stage -le 7 ]; then
   # The SRE16 test data
   # THESIS: changed data/sre16_eval_test -> data/sre_combined
   sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
-    $nnet_dir data/sre_combined \
-    exp/xvectors_sre16_eval_test
+    $nnet_dir data/sre2005_test \
+    exp/xvectors_sre2005_test
 
   # The SRE16 enroll data
   # THESIS: changed data/sre16_eval_enroll -> data/sre_combined
   sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
-    $nnet_dir data/sre_combined \
-    exp/xvectors_sre16_eval_enroll
+    $nnet_dir data/sre2005_train \
+    exp/xvectors_sre2005_train
 fi
 
 # THESIS: checkpoint
 echo "Part 6: x-vector extraction for different datasets --> COMPLETE"
-echo "Part 6: Same dataset used for centering+normalization, PLDA training, enrolling, testing !!!"
 # exit 1;
 
-if [ $stage -le 8 ]; then
+# THESIS: NOT needed with pretrained models (DNN, PLDA, MEAN_VECTOR)
+echo "Computing MEAN_VEC, PLDA block is MISSED!!!"
+if [ 0 == 1 ]; then
   # Compute the mean vector for centering the evaluation xvectors.
   $train_cmd exp/xvectors_sre16_major/log/compute_mean.log \
     ivector-mean scp:exp/xvectors_sre16_major/xvector.scp \
@@ -343,7 +354,7 @@ fi
 # THESIS: checkpoint
 echo "Part 7: Centering, PLDA training --> COMPLETE"
 echo "Part 7: Same dataset used for centering+normalization, PLDA training, enrolling, testing !!!"
-# exit 1;
+exit 1;
 
 
 if [ $stage -le 9 ]; then
