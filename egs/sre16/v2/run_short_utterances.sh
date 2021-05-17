@@ -31,18 +31,18 @@ vaddir=`pwd`/mfcc
 # SRE16 trials
 # THESIS: own trials file
 # sre16_trials=data/sre_combined/trials_NIST04_full
-sre05_trials=data/sre2005_test/trials_nist05_common_unix
+sre05_trials=data/sre2005_test_short/trials_nist05_short_common_unix
 nnet_dir=exp/xvector_nnet_1a
 
-stage=8
+stage=7
 echo "Starting from stage $stage"
 
 if [ $stage -le 0 ]; then
   # Path to some, but not all of the training corpora
   data_root=/home/ubuntu/combined_extracted_data
   nist04_root=$data_root/nist04
-  nist05_train_root=$data_root/nist05_train
-  nist05_test_root=$data_root/nist05_test
+  nist05_train_root=$data_root/nist05_train_short
+  nist05_test_root=$data_root/nist05_test_short
 
 #  # Prepare telephone and microphone speech from Mixer6.
 #  local/make_mx6.sh $data_root/LDC2013S03 data/
@@ -58,20 +58,20 @@ if [ $stage -le 0 ]; then
 #  local/make_sre.sh $data_root data/
 
   # THESIS: Prepare NIST04 dataset.
-  local/make_sre04_VRNT.sh $nist04_root data/
+  # local/make_sre04_VRNT.sh $nist04_root data/
 
   # THESIS: Validate and Fix NIST05
-  utils/validate_data_dir.sh --no-text --no-feats data/sre2004
-  utils/fix_data_dir.sh data/sre2004
+  # utils/validate_data_dir.sh --no-text --no-feats data/sre2004
+  # utils/fix_data_dir.sh data/sre2004
 
   # THESIS: Prepare NIST05 dataset.
-  local/make_sre05_VRNT.sh $nist05_train_root $nist05_test_root data/
+  local/make_sre05_short_VRNT.sh $nist05_train_root $nist05_test_root data/
   
   # THESIS: Validate and Fix NIST05
-  utils/validate_data_dir.sh --no-text --no-feats data/sre2005_train
-  utils/fix_data_dir.sh data/sre2005_train
-  utils/validate_data_dir.sh --no-text --no-feats data/sre2005_test
-  utils/fix_data_dir.sh data/sre2005_test
+  # utils/validate_data_dir.sh --no-text --no-feats data/sre2005_train_short
+  # utils/fix_data_dir.sh data/sre2005_train_short
+  utils/validate_data_dir.sh --no-text --no-feats data/sre2005_test_short
+  utils/fix_data_dir.sh data/sre2005_test_short
 
 
 #  # Combine all SREs prior to 2016 and Mixer6 into one dataset
@@ -84,10 +84,10 @@ if [ $stage -le 0 ]; then
 #  utils/fix_data_dir.sh data/sre
 
 #  # THESIS: Combine existing datasets from SREs prior to 2016 and Mixer6 into one dataset
- utils/combine_data.sh data/sre \
-   data/sre2004
- utils/validate_data_dir.sh --no-text --no-feats data/sre
- utils/fix_data_dir.sh data/sre
+ # utils/combine_data.sh data/sre \
+ #   data/sre2004
+ # utils/validate_data_dir.sh --no-text --no-feats data/sre
+ # utils/fix_data_dir.sh data/sre
 
 #  # Prepare SWBD corpora.
 #  local/make_swbd_cellular1.pl $data_root/LDC2001S13 \
@@ -125,7 +125,8 @@ if [ $stage -le 1 ]; then
       /export/b{14,15,16,17}/$USER/kaldi-data/egs/sre16/v2/xvector-$(date +'%m_%d_%H_%M')/mfccs/storage $mfccdir/storage
   fi
   # THESIS: set used datasets. Oroginal was: (sre swbd sre16_eval_enroll sre16_eval_test sre16_major)
-  for name in sre sre2005_train sre2005_test; do
+  # THESIS: set used datasets. My datasets: (sre sre2005_train sre2005_test sre2005_train_short sre2005_test_short)
+  for name in sre sre2005_train sre2005_test_short; do
     steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
       data/${name} exp/make_mfcc $mfccdir
     utils/fix_data_dir.sh data/${name}
@@ -301,14 +302,14 @@ if [ $stage -le 7 ]; then
   # things like LDA or PLDA.
   # THESIS: NOT needed with pretrained models (DNN, PLDA, MEAN_VECTOR)
   sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
-    $nnet_dir data/sre_combined \
-    exp/xvectors_sre_combined
+   $nnet_dir data/sre_combined \
+   exp/xvectors_sre_combined
 
   # The SRE16 test data
   # THESIS: changed data/sre16_eval_test -> data/sre_combined
   sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 16G" --nj 1 --use-gpu $use_gpu --cache-capacity 512 --chunk-size 500 \
-    $nnet_dir data/sre2005_test \
-    exp/xvectors_sre2005_test
+   $nnet_dir data/sre2005_test_short \
+   exp/xvectors_sre2005_test_short
 
   # The SRE16 enroll data
   # THESIS: changed data/sre16_eval_enroll -> data/sre_combined
@@ -398,14 +399,14 @@ if [ $stage -le 10 ]; then
     --num-utts=ark:exp/xvectors_sre2005_train/num_utts.ark \
     "ivector-copy-plda --smoothing=0.0 exp/xvectors_sre2005_train/plda_own_adapt - |" \
     "ark:ivector-mean ark:data/sre2005_train/spk2utt scp:exp/xvectors_sre2005_train/xvector.scp ark:- | ivector-subtract-global-mean exp/xvectors_sre2005_train/mean.vec ark:- ark:- | transform-vec exp/xvectors_sre_combined/transform_own.mat ark:- ark:- | ivector-normalize-length ark:- ark:- |" \
-    "ark:ivector-subtract-global-mean exp/xvectors_sre2005_train/mean.vec scp:exp/xvectors_sre2005_test/xvector.scp ark:- | transform-vec exp/xvectors_sre_combined/transform_own.mat ark:- ark:- | ivector-normalize-length ark:- ark:- |" \
-    "cat '$sre05_trials' | cut -d\  --fields=1,2 |" exp/scores/sre05_eval_scores_adapt_own || exit 1;
+    "ark:ivector-subtract-global-mean exp/xvectors_sre2005_train/mean.vec scp:exp/xvectors_sre2005_test_short/xvector.scp ark:- | transform-vec exp/xvectors_sre_combined/transform_own.mat ark:- ark:- | ivector-normalize-length ark:- ark:- |" \
+    "cat '$sre05_trials' | cut -d\  --fields=1,2 |" exp/scores/sre05_eval_scores_adapt_own_short_layer7 || exit 1;
 
   # utils/filter_scp.pl $sre16_trials_tgl exp/scores/sre16_eval_scores_adapt > exp/scores/sre16_eval_tgl_scores_adapt
   # utils/filter_scp.pl $sre16_trials_yue exp/scores/sre16_eval_scores_adapt > exp/scores/sre16_eval_yue_scores_adapt
-  paste $sre05_trials exp/scores/sre05_eval_scores_adapt_own | awk '{print $6, $3}' > exp/scores/sre05_eval_scores_ADAPT_own_for_eer_compute
-  pooled_eer=$(paste $sre05_trials exp/scores/sre05_eval_scores_adapt_own | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
-  compute-eer exp/scores/sre05_eval_scores_ADAPT_own_for_eer_compute > exp/scores/sre05_eval_eer_score_ADAPTED_own
+  paste $sre05_trials exp/scores/sre05_eval_scores_adapt_own_short_layer7 | awk '{print $6, $3}' > exp/scores/sre05_eval_scores_ADAPT_own_short_layer7_for_eer_compute
+  pooled_eer=$(paste $sre05_trials exp/scores/sre05_eval_scores_adapt_own_short_layer7 | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
+  compute-eer exp/scores/sre05_eval_scores_ADAPT_own_short_layer7_for_eer_compute > exp/scores/sre05_eval_eer_score_ADAPTED_own_short_layer7
   # tgl_eer=$(paste $sre16_trials_tgl exp/scores/sre16_eval_tgl_scores_adapt | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
   # yue_eer=$(paste $sre16_trials_yue exp/scores/sre16_eval_yue_scores_adapt | awk '{print $6, $3}' | compute-eer - 2>/dev/null)
   echo "Using Adapted PLDA, EER: Pooled ${pooled_eer}%"
